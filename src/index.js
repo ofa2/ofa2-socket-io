@@ -2,7 +2,7 @@ import _ from 'lodash';
 import humps from 'humps';
 import socketIO from 'socket.io';
 
-async function useAuth(keys, socket, next) {
+async function parseHeaders(keys, socket, next) {
   let errors = [];
   socket.userProps = {};
 
@@ -23,16 +23,16 @@ async function useAuth(keys, socket, next) {
   });
 
   if (errors && errors.length) {
-    socket.authErrors = errors;
+    socket.headersError = errors;
   }
   next();
   return null;
 }
 
-async function checkAuth(client) {
-  if (client.authErrors) {
-    logger.info('client.authErrors: ', client.authErrors);
-    client.emit('unauthorized', { message: client.authErrors }, () => {
+async function checkHeadersError(client) {
+  if (client.headersError) {
+    logger.info('client.headersError: ', client.authErrors);
+    client.emit('unauthorized', { message: client.headersError }, () => {
       client.disconnect();
     });
   }
@@ -40,11 +40,10 @@ async function checkAuth(client) {
 
 class Ofa2SocketIO {
   constructor({
-    server, socketHeaderKeys = [], auth = true, autoJoinRoom = true, propGet = true,
+    server, socketHeaderKeys = [], autoJoinRoom = true, propGet = true,
   }) {
     this.server = server;
     this.socketHeaderKeys = socketHeaderKeys;
-    this.auth = auth;
     this.autoJoinRoom = autoJoinRoom;
     this.propGet = propGet;
 
@@ -72,14 +71,11 @@ class Ofa2SocketIO {
       },
     });
 
-    // 权限验证
-    if (this.auth) {
-      this.io.use((socket, next) => {
-        return useAuth(this.keys, socket, next);
-      });
-
-      this.connectionListeners.push(checkAuth.bind(this));
-    }
+    // header 参数解析
+    this.io.use((socket, next) => {
+      return parseHeaders(this.keys, socket, next);
+    });
+    this.connectionListeners.push(checkHeadersError.bind(this));
 
     // 加入某个 room
     if (this.autoJoinRoom) {
@@ -211,10 +207,10 @@ class Ofa2SocketIO {
 
 async function lift() {
   let {
-    headerKeys, auth, autoJoinRoom, propGet,
+    headerKeys, autoJoinRoom, propGet,
   } = this.config.socket;
 
-  let ofa2SocketIO = new Ofa2SocketIO(this.server, headerKeys, auth, autoJoinRoom, propGet);
+  let ofa2SocketIO = new Ofa2SocketIO(this.server, headerKeys, autoJoinRoom, propGet);
   ofa2SocketIO.create();
 
   this.io = ofa2SocketIO;

@@ -6,7 +6,7 @@ var _ = _interopDefault(require('lodash'));
 var humps = _interopDefault(require('humps'));
 var socketIO = _interopDefault(require('socket.io'));
 
-async function useAuth(keys, socket, next) {
+async function parseHeaders(keys, socket, next) {
   let errors = [];
   socket.userProps = {};
   keys.forEach(item => {
@@ -31,18 +31,18 @@ async function useAuth(keys, socket, next) {
   });
 
   if (errors && errors.length) {
-    socket.authErrors = errors;
+    socket.headersError = errors;
   }
 
   next();
   return null;
 }
 
-async function checkAuth(client) {
-  if (client.authErrors) {
-    logger.info('client.authErrors: ', client.authErrors);
+async function checkHeadersError(client) {
+  if (client.headersError) {
+    logger.info('client.headersError: ', client.authErrors);
     client.emit('unauthorized', {
-      message: client.authErrors
+      message: client.headersError
     }, () => {
       client.disconnect();
     });
@@ -53,13 +53,11 @@ class Ofa2SocketIO {
   constructor({
     server,
     socketHeaderKeys = [],
-    auth = true,
     autoJoinRoom = true,
     propGet = true
   }) {
     this.server = server;
     this.socketHeaderKeys = socketHeaderKeys;
-    this.auth = auth;
     this.autoJoinRoom = autoJoinRoom;
     this.propGet = propGet;
     this.io = null;
@@ -84,15 +82,12 @@ class Ofa2SocketIO {
         res.end();
       }
 
-    }); // 权限验证
+    }); // header 参数解析
 
-    if (this.auth) {
-      this.io.use((socket, next) => {
-        return useAuth(this.keys, socket, next);
-      });
-      this.connectionListeners.push(checkAuth.bind(this));
-    } // 加入某个 room
-
+    this.io.use((socket, next) => {
+      return parseHeaders(this.keys, socket, next);
+    });
+    this.connectionListeners.push(checkHeadersError.bind(this)); // 加入某个 room
 
     if (this.autoJoinRoom) {
       this.connectionListeners.push(client => {
@@ -226,11 +221,10 @@ class Ofa2SocketIO {
 async function lift() {
   let {
     headerKeys,
-    auth,
     autoJoinRoom,
     propGet
   } = this.config.socket;
-  let ofa2SocketIO = new Ofa2SocketIO(this.server, headerKeys, auth, autoJoinRoom, propGet);
+  let ofa2SocketIO = new Ofa2SocketIO(this.server, headerKeys, autoJoinRoom, propGet);
   ofa2SocketIO.create();
   this.io = ofa2SocketIO;
 }
